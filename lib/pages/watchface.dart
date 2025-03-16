@@ -19,9 +19,10 @@ class WatchFace extends StatefulWidget {
 class _WatchFaceState extends State<WatchFace> {
   late DateTime now;
   late tz.TZDateTime localTime;
+  late Timer _timer;
   String selectedTimezone = ''; // Initially empty, will hold the selected timezone
   String temperature = '...'; // Placeholder for temperature
-  String weatherIcon = '☀️'; // Default icon (sunny)
+  IconData weatherIcon = Icons.wb_sunny;
   String apiKey = key; // Replace with your OpenWeather API key
   bool isEnglish = true; // Flag to toggle between English and Bengali
   bool is24HourFormat = true; // Default to 24-hour format
@@ -32,6 +33,9 @@ class _WatchFaceState extends State<WatchFace> {
     tz.initializeTimeZones();
     // Set default timezone to local time
     _setTimezone('Asia/Dhaka');
+
+    // Initialize the timer to update the time every second
+    _timer = Timer.periodic(const Duration(seconds: 1), _updateTime);
   }
 
   // Set the timezone and update the time
@@ -45,6 +49,20 @@ class _WatchFaceState extends State<WatchFace> {
 
     _fetchTemperature(timezone); // Fetch temperature whenever timezone is changed
   }
+
+  void _updateTime(Timer timer) {
+    setState(() {
+      now = DateTime.now();
+      localTime = tz.TZDateTime.now(tz.getLocation(selectedTimezone));
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel(); // Cancel the timer when the widget is disposed
+    super.dispose();
+  }
+
 
 
   // Fetch temperature from OpenWeather API
@@ -61,10 +79,9 @@ class _WatchFaceState extends State<WatchFace> {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final temp = data['main']['temp'];
-        final weatherCondition = data['weather'][0]['main']; // Fetch weather condition (e.g., 'Clear', 'Rain', etc.)
         setState(() {
           temperature = '${temp.toStringAsFixed(0)}°C'; // Update temperature
-          _setWeatherIcon(weatherCondition); // Update weather icon based on condition
+          _setWeatherIcon(temp); // Update weather icon based on condition
         });
       } else {
         throw Exception('Failed to fetch weather data');
@@ -75,25 +92,19 @@ class _WatchFaceState extends State<WatchFace> {
   }
 
   // Set the weather icon based on the condition
-  void _setWeatherIcon(String weatherCondition) {
-    if (weatherCondition == 'Clear') {
-      weatherIcon = '☀️'; // Sunny weather
-    } else if (weatherCondition == 'Clouds') {
-      weatherIcon = '☁️'; // Cloudy weather
-    } else if (weatherCondition == 'Rain') {
-      weatherIcon = '🌧️'; // Rainy weather
-    } else if (weatherCondition == 'Snow') {
-      weatherIcon = '❄️'; // Snowy weather
-    } else if (weatherCondition == 'Thunderstorm') {
-      weatherIcon = '⛈️'; // Thunderstorm weather
-    } else if (weatherCondition == 'Drizzle') {
-      weatherIcon = '🌦️'; // Drizzle weather
+  void _setWeatherIcon(double temp) {
+    if (temp < 10) {
+      weatherIcon = Icons.ac_unit; // Snowflake icon for cold weather
+    } else if (temp >= 10 && temp < 25) {
+      weatherIcon = Icons.wb_cloudy; // Cloudy icon for mild weather
+    } else if (temp >= 25 && temp < 35) {
+      weatherIcon = Icons.wb_sunny; // Sun icon for warm weather
     } else {
-      weatherIcon = '☀️'; // Default to sunny if the condition is unknown
+      weatherIcon = Icons.local_fire_department; // Fire icon for hot weather
     }
   }
 
-  // convert the text from Bangla to English and vice versa
+  // convert the text from Bengali to English and vice versa
   String _convertText(String text) {
     if (isEnglish) {
       return BanglaConverter.banToEng(text);
@@ -109,7 +120,7 @@ class _WatchFaceState extends State<WatchFace> {
 
     // English and Bangla Days
     final List<String> daysEnglish = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    final List<String> daysBangla = ['রবি', 'সোম', 'মঙ্গল', 'বুধ', 'বৃহস্পতি', 'শুক্র', 'শনি'];
+    final List<String> daysBangla = ['রবি', 'সোম', 'মঙ্গল', 'বুধ', 'বৃহঃ', 'শুক্র', 'শনি'];
 
 // English and Bangla Months
     final List<String> monthsEnglish = [
@@ -132,8 +143,10 @@ class _WatchFaceState extends State<WatchFace> {
 
     // Convert 24-hour format to 12-hour if needed
     int hour = localTime.hour;
+    String amPm = '';
 
     if (!is24HourFormat) {
+      amPm = hour >= 12 ? 'PM' : 'AM';
       hour = hour % 12;
       hour = hour == 0 ? 12 : hour; // Convert 0 to 12 for 12 AM case
     }
@@ -209,12 +222,10 @@ class _WatchFaceState extends State<WatchFace> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text(
+                            Icon(
                               weatherIcon,
-                              style: const TextStyle(
-                                fontSize: 15,
-                                color: Colors.white,
-                              ),
+                              size: 15,
+                              color: Colors.white,
                             ),
                             Text(
                               _convertText(temperature),
@@ -249,6 +260,13 @@ class _WatchFaceState extends State<WatchFace> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
+                          Text(
+                            is24HourFormat ? '' : isEnglish ? amPm : (amPm == 'AM') ? 'পূর্বাহ্ন' : 'অপরাহ্ন',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -271,8 +289,10 @@ class _WatchFaceState extends State<WatchFace> {
                           children: [
                             Text(
                               dayOfWeek,
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: (dayOfWeek == 'Fri' || dayOfWeek == 'Sat' || dayOfWeek == 'শুক্র' || dayOfWeek == 'শনি')
+                                    ? Colors.red[200]
+                                    : Colors.white,
                                 fontSize: 16,
                               ),
                             ),
