@@ -1,13 +1,12 @@
 import 'dart:async';
-import 'dart:convert';
-import 'package:bangla_converter/bangla_converter.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:http/http.dart' as http;
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
-import  '../constants/api_key.dart';
+import '../constants/api_key.dart';
+import '../utils/utilities.dart';
+import '../utils/weather_utils.dart';
 
 class WatchFace extends StatefulWidget {
   const WatchFace({super.key});
@@ -20,25 +19,22 @@ class _WatchFaceState extends State<WatchFace> {
   late DateTime now;
   late tz.TZDateTime localTime;
   late Timer _timer;
-  String selectedTimezone = ''; // Initially empty, will hold the selected timezone
-  String temperature = '...'; // Placeholder for temperature
+  String selectedTimezone = '';
+  String temperature = '...';
   IconData weatherIcon = Icons.wb_sunny;
-  String apiKey = key; // Replace with your OpenWeather API key
-  bool isEnglish = true; // Flag to toggle between English and Bengali
-  bool is24HourFormat = true; // Default to 24-hour format
+  String apiKey = key;
+  bool isEnglish = true;
+  bool is24HourFormat = true;
+
 
   @override
   void initState() {
     super.initState();
     tz.initializeTimeZones();
-    // Set default timezone to local time
     _setTimezone('Asia/Dhaka');
-
-    // Initialize the timer to update the time every second
     _timer = Timer.periodic(const Duration(seconds: 1), _updateTime);
   }
 
-  // Set the timezone and update the time
   void _setTimezone(String timezone) {
     final location = tz.getLocation(timezone);
     final tzDateTime = tz.TZDateTime.now(location);
@@ -47,7 +43,7 @@ class _WatchFaceState extends State<WatchFace> {
       selectedTimezone = timezone;
     });
 
-    _fetchTemperature(timezone); // Fetch temperature whenever timezone is changed
+    _fetchTemperature(timezone);
   }
 
   void _updateTime(Timer timer) {
@@ -59,125 +55,48 @@ class _WatchFaceState extends State<WatchFace> {
 
   @override
   void dispose() {
-    _timer.cancel(); // Cancel the timer when the widget is disposed
+    _timer.cancel();
     super.dispose();
   }
 
-
-
-  // Fetch temperature from OpenWeather API
   Future<void> _fetchTemperature(String timezone) async {
-    try {
-      final location = tz.getLocation(timezone);
-      final cityName = location.name.split('/')[1]; // Extract city name from timezone
-      final url = Uri.parse(
-        'http://api.openweathermap.org/data/2.5/weather?q=$cityName&appid=$apiKey&units=metric',
-      );
-
-      final response = await http.get(url);
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final temp = data['main']['temp'];
-        setState(() {
-          temperature = '${temp.toStringAsFixed(0)}°C'; // Update temperature
-          _setWeatherIcon(temp); // Update weather icon based on condition
-        });
-      } else {
-        throw Exception('Failed to fetch weather data');
-      }
-    } catch (e) {
-      print('Error fetching temperature: $e');
-    }
+    final weatherData = await getWeatherData(timezone, apiKey);
+    setState(() {
+      temperature = weatherData['temperature'];
+      weatherIcon = weatherData['weatherIcon'];
+    });
   }
-
-  // Set the weather icon based on the condition
-  void _setWeatherIcon(double temp) {
-    if (temp < 10) {
-      weatherIcon = Icons.ac_unit; // Snowflake icon for cold weather
-    } else if (temp >= 10 && temp < 25) {
-      weatherIcon = Icons.wb_cloudy; // Cloudy icon for mild weather
-    } else if (temp >= 25 && temp < 35) {
-      weatherIcon = Icons.wb_sunny; // Sun icon for warm weather
-    } else {
-      weatherIcon = Icons.local_fire_department; // Fire icon for hot weather
-    }
-  }
-
-  // convert the text from Bengali to English and vice versa
-  String _convertText(String text) {
-    if (isEnglish) {
-      return BanglaConverter.banToEng(text);
-    } else {
-      return BanglaConverter.engToBan(text);
-    }
-  }
-
 
   @override
   Widget build(BuildContext context) {
     String date = DateFormat('dd').format(localTime);
+    String dayOfWeek = getDayOfWeek(localTime, isEnglish);
+    String month = getMonth(localTime, isEnglish);
 
-    // English and Bangla Days
-    final List<String> daysEnglish = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    final List<String> daysBangla = ['রবি', 'সোম', 'মঙ্গল', 'বুধ', 'বৃহঃ', 'শুক্র', 'শনি'];
-
-// English and Bangla Months
-    final List<String> monthsEnglish = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-    ];
-
-    final List<String> monthsBangla = [
-      'জানু', 'ফেব', 'মার্চ', 'এপ্রি', 'মে', 'জুন', 'জুল', 'আগ', 'সেপ', 'অক্টো', 'নভে', 'ডিসে'
-    ];
-
-
-    // Get the day index
-    int dayIndex = localTime.weekday % 7; // Adjust index (1=Monday in Dart)
-    String dayOfWeek = isEnglish ? daysEnglish[dayIndex] : daysBangla[dayIndex];
-
-    // Get the month index
-    int monthIndex = localTime.month - 1; // Month is 1-based in Dart
-    String month = isEnglish ? monthsEnglish[monthIndex] : monthsBangla[monthIndex];
-
-
-    // Convert 24-hour format to 12-hour if needed
     int hour = localTime.hour;
     String amPm = '';
-
     if (!is24HourFormat) {
       amPm = hour >= 12 ? 'PM' : 'AM';
       hour = hour % 12;
-      hour = hour == 0 ? 12 : hour; // Convert 0 to 12 for 12 AM case
+      hour = hour == 0 ? 12 : hour;
     }
 
     String formattedHour = hour.toString().padLeft(2, '0');
     String formattedMinute = localTime.minute.toString().padLeft(2, '0');
 
-
-    // Get the list of all timezones
-    final timezones = tz.timeZoneDatabase.locations.keys.toList();
-
     return Scaffold(
       appBar: AppBar(
         title: const Text(
           'Watch Face',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 30,
-          ),
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 30),
         ),
         backgroundColor: Colors.blueGrey[300],
-        // add a button to convert text from Bangla to English and vice versa
         actions: [
           Padding(
             padding: EdgeInsets.symmetric(horizontal: 10),
             child: Text(
               isEnglish ? 'English' : 'বাংলা',
-              style: const TextStyle(
-                fontSize: 20,
-                color: Colors.black,
-              ),
+              style: const TextStyle(fontSize: 20, color: Colors.black),
             ),
           ),
           CupertinoSwitch(
@@ -186,7 +105,8 @@ class _WatchFaceState extends State<WatchFace> {
               setState(() {
                 isEnglish = value;
               });
-            }),
+            },
+          ),
           SizedBox(width: 10),
         ],
       ),
@@ -206,7 +126,6 @@ class _WatchFaceState extends State<WatchFace> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Left circle (Weather Info)
                     Expanded(
                       child: Container(
                         width: 60,
@@ -228,7 +147,7 @@ class _WatchFaceState extends State<WatchFace> {
                               color: Colors.white,
                             ),
                             Text(
-                              _convertText(temperature),
+                              convertText(temperature, isEnglish),
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 15,
@@ -238,40 +157,31 @@ class _WatchFaceState extends State<WatchFace> {
                         ),
                       ),
                     ),
-
-                    // Middle (Time Display)
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            _convertText(formattedHour),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 70,
-                              fontWeight: FontWeight.bold,
-                            ),
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          convertText(formattedHour, isEnglish),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 70,
+                            fontWeight: FontWeight.bold,
                           ),
-                          Text(
-                            _convertText(formattedMinute),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 70,
-                              fontWeight: FontWeight.bold,
-                            ),
+                        ),
+                        Text(
+                          convertText(formattedMinute, isEnglish),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 70,
+                            fontWeight: FontWeight.bold,
                           ),
-                          Text(
-                            is24HourFormat ? '' : isEnglish ? amPm : (amPm == 'AM') ? 'পূর্বাহ্ন' : 'অপরাহ্ন',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                        Text(
+                          is24HourFormat ? '' : isEnglish ? amPm : (amPm == 'AM') ? 'পূর্বাহ্ন' : 'অপরাহ্ন',
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                      ],
                     ),
-
-                    // Right circle (Day & Date)
                     Expanded(
                       child: Container(
                         width: 60,
@@ -286,6 +196,7 @@ class _WatchFaceState extends State<WatchFace> {
                         ),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
                               dayOfWeek,
@@ -295,13 +206,15 @@ class _WatchFaceState extends State<WatchFace> {
                                     : Colors.white,
                                 fontSize: 16,
                               ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                             Text(
-                            '${_convertText(date)} $month',
+                              '${convertText(date, isEnglish)} $month',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 12,
                               ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ],
                         ),
@@ -312,9 +225,8 @@ class _WatchFaceState extends State<WatchFace> {
               ),
             ),
             const SizedBox(height: 30),
-            // Dropdown Button to change timezone
             SizedBox(
-              width: 300, // Adjust the width as needed
+              width: 300,
               height: 60,
               child: InputDecorator(
                 decoration: InputDecoration(
@@ -326,12 +238,14 @@ class _WatchFaceState extends State<WatchFace> {
                 ),
                 child: DropdownButton<String>(
                   value: selectedTimezone,
-                  items: timezones.map((String timezone) {
+                  items: tz.timeZoneDatabase.locations.keys
+                      .map((String timezone) {
                     return DropdownMenuItem<String>(
                       value: timezone,
                       child: Text(timezone),
                     );
-                  }).toList(),
+                  })
+                      .toList(),
                   onChanged: (String? newTimezone) {
                     if (newTimezone != null) {
                       _setTimezone(newTimezone);
@@ -339,7 +253,7 @@ class _WatchFaceState extends State<WatchFace> {
                   },
                   style: const TextStyle(color: Colors.black),
                   dropdownColor: Colors.white,
-                  isExpanded: true,  // Makes the button expand to fill the container's width
+                  isExpanded: true,
                   iconSize: 30,
                   iconEnabledColor: Colors.blueGrey[900],
                 ),
@@ -349,17 +263,17 @@ class _WatchFaceState extends State<WatchFace> {
             TextButton(
               onPressed: () {
                 setState(() {
-                  is24HourFormat = !is24HourFormat; // Toggle the format
+                  is24HourFormat = !is24HourFormat;
                 });
               },
               style: TextButton.styleFrom(
-                foregroundColor: Colors.white, // Text color
-                backgroundColor: Colors.blueGrey[300], // Button background color
+                foregroundColor: Colors.white,
+                backgroundColor: Colors.blueGrey[300],
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8), // Rounded corners
-                  side: const BorderSide(color: Colors.blueGrey, width: 2), // Border color & width
+                  borderRadius: BorderRadius.circular(8),
+                  side: const BorderSide(color: Colors.blueGrey, width: 2),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // Button padding
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               ),
               child: Text(
                 is24HourFormat
@@ -371,7 +285,6 @@ class _WatchFaceState extends State<WatchFace> {
                 ),
               ),
             ),
-
           ],
         ),
       ),
